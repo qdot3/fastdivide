@@ -395,4 +395,22 @@ mod test_modulus {
             }
         }
     }
+
+    #[test]
+    fn divisible() {
+        for d in std::iter::successors(Some(0_u64), |&x| Some(x.wrapping_mul(x).wrapping_add(3)))
+            .take(1 << 10)
+        {
+            if let Some(d) = NonZero::new(d) {
+                let modulus = ModulusU64::new(d);
+
+                for x in
+                    std::iter::successors(Some(0_u64), |&x| Some(x.wrapping_mul(x).wrapping_add(4)))
+                        .take(5 << 10)
+                {
+                    assert_eq!(modulus.can_divide(x), x % d == 0)
+                }
+            }
+        }
+    }
 }
