@@ -61,6 +61,8 @@ fn histogram(vals: &[u64], min: u64, interval: u64, output: &mut [usize]) {
 */
 #![no_std]
 
+use core::num::NonZeroU64;
+
 #[cfg(feature = "std")]
 extern crate std;
 
@@ -88,7 +90,6 @@ fn libdivide_mullhi_u64(x: u64, y: u64) -> u64 {
     let yl = y as u128;
     ((xl * yl) >> 64) as u64
 }
-
 
 #[inline(always)]
 fn floor_log2(n: u64) -> u8 {
@@ -217,7 +218,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn test_floor_log2() {
         for i in [1, 2, 3, 4, 10, 15, 16, 31, 32, 33, u64::MAX] {
@@ -228,7 +228,6 @@ mod tests {
             assert!(upper_bound >= i);
         }
     }
-
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100000))]
@@ -277,6 +276,122 @@ mod tests {
             let divider = DividerU64::divide_by(d);
             for i in (0u64..10_000).chain(vec![2048, 234234131223u64, 1 << 43, 1 << 43 + 1]) {
                 assert_eq!(divider.divide(i), i / d);
+            }
+        }
+    }
+}
+
+/// Fast modulo algorithm from <https://onlinelibrary.wiley.com/doi/10.1002/spe.2689>.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModulusU64 {
+    /// divisor
+    d: u64,
+    /// `(1 << 128).div_ceil(d)`
+    c: u128,
+}
+
+impl ModulusU64 {
+    #[inline(always)]
+    pub const fn new(d: NonZeroU64) -> Self {
+        let d = d.get();
+        let c = (u128::MAX / d as u128).wrapping_add(1);
+
+        Self { d, c }
+    }
+
+    /// Calculates `x % self`.
+    #[inline(always)]
+    pub const fn modulo(&self, x: u64) -> u64 {
+        let (hi, lo) = {
+            let x = self.c.wrapping_mul(x as u128);
+            (x >> 64, x & (!0 >> 64))
+        };
+        // ( (hi << 64) + lo ) * d >> 128
+        (hi.wrapping_mul(self.d as u128)
+            .wrapping_add((lo * self.d as u128) >> 64)
+            >> 64) as u64
+    }
+
+    /// Checks whether `x` is divisible by `self`.
+    #[inline(always)]
+    pub const fn can_divide(&self, x: u64) -> bool {
+        // x % d = 0 <=> c * x % (1 << 128) < c
+        self.c.wrapping_mul(x as u128) < self.c
+    }
+}
+
+impl core::ops::Rem<ModulusU64> for u64 {
+    type Output = u64;
+
+    fn rem(self, rhs: ModulusU64) -> Self::Output {
+        rhs.modulo(self)
+    }
+}
+
+#[cfg(test)]
+mod test_modulus {
+    use core::num::NonZero;
+
+    use super::ModulusU64;
+
+    #[test]
+    fn power_of_two() {
+        for d in std::iter::successors(Some(1_u64), |d| d.checked_mul(2)) {
+            let modulus = ModulusU64::new(NonZero::new(d).unwrap());
+
+            for x in std::iter::successors(Some(1_u64), |d| d.checked_mul(2)) {
+                assert_eq!(modulus.modulo(x), x % d)
+            }
+            for x in std::iter::successors(Some(1_u64), |d| d.checked_mul(3)) {
+                assert_eq!(modulus.modulo(x), x % d)
+            }
+            assert_eq!(modulus.modulo(!0), !0 % d)
+        }
+    }
+
+    #[test]
+    fn small() {
+        for d in 1..1 << 10 {
+            let modulus = ModulusU64::new(NonZero::new(d).unwrap());
+
+            // naive PRNG
+            for x in
+                std::iter::successors(Some(0_u64), |&x| Some(x.wrapping_mul(x).wrapping_add(1)))
+                    .take(2 << 10)
+            {
+                assert_eq!(modulus.modulo(x), x % d)
+            }
+        }
+    }
+
+    #[test]
+    fn large() {
+        for d in (1..=u64::MAX).rev().take(1 << 10) {
+            let modulus = ModulusU64::new(NonZero::new(d).unwrap());
+
+            for x in
+                std::iter::successors(Some(0_u64), |&x| Some(x.wrapping_mul(x).wrapping_add(2)))
+                    .take(5 << 10)
+            {
+                assert_eq!(modulus.modulo(x), x % d)
+            }
+        }
+    }
+
+    #[test]
+    fn random() {
+        for d in std::iter::successors(Some(0_u64), |&x| Some(x.wrapping_mul(x).wrapping_add(3)))
+            .take(1 << 15)
+        {
+            if let Some(d) = NonZero::new(d) {
+                let modulus = ModulusU64::new(d);
+
+                for x in
+                    std::iter::successors(Some(0_u64), |&x| Some(x.wrapping_mul(x).wrapping_add(4)))
+                        .take(1 << 5)
+                {
+                    assert_eq!(modulus.modulo(x), x % d)
+                }
             }
         }
     }
