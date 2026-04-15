@@ -331,6 +331,7 @@ mod test_modulus {
     use core::num::NonZero;
 
     use super::ModulusU64;
+    use proptest::prelude::*;
 
     #[test]
     fn power_of_two() {
@@ -376,39 +377,23 @@ mod test_modulus {
         }
     }
 
-    #[test]
-    fn random() {
-        for d in std::iter::successors(Some(0_u64), |&x| Some(x.wrapping_mul(x).wrapping_add(3)))
-            .take(1 << 15)
-        {
-            if let Some(d) = NonZero::new(d) {
-                let modulus = ModulusU64::new(d);
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50 << 10))]
+        #[test]
+        fn random_modulo(d in 1..=u64::MAX, x: u64) {
+            let modulus = ModulusU64::new(NonZero::new(d).unwrap());
 
-                for x in
-                    std::iter::successors(Some(0_u64), |&x| Some(x.wrapping_mul(x).wrapping_add(4)))
-                        .take(1 << 5)
-                {
-                    assert_eq!(modulus.modulo(x), x % d)
-                }
-            }
+            assert_eq!(modulus.modulo(x), x%d)
         }
     }
 
-    #[test]
-    fn divisible() {
-        for d in std::iter::successors(Some(0_u64), |&x| Some(x.wrapping_mul(x).wrapping_add(3)))
-            .take(1 << 10)
-        {
-            if let Some(d) = NonZero::new(d) {
-                let modulus = ModulusU64::new(d);
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50 << 10))]
+        #[test]
+        fn random_divisible(d in 1..=u64::MAX, x: u64) {
+            let modulus = ModulusU64::new(NonZero::new(d).unwrap());
 
-                for x in
-                    std::iter::successors(Some(0_u64), |&x| Some(x.wrapping_mul(x).wrapping_add(4)))
-                        .take(5 << 10)
-                {
-                    assert_eq!(modulus.can_divide(x), x % d == 0)
-                }
-            }
+            assert_eq!(modulus.can_divide(x), x%d==0)
         }
     }
 }
