@@ -301,15 +301,13 @@ impl ModulusU64 {
 
     /// Calculates `x % self`.
     #[inline(always)]
-    pub const fn modulo(&self, x: u64) -> u64 {
+    pub fn modulo(&self, x: u64) -> u64 {
         let (hi, lo) = {
             let x = self.c.wrapping_mul(x as u128);
-            (x >> 64, x & (!0 >> 64))
+            ((x >> 64) as u64, x as u64)
         };
-        // ( (hi << 64) + lo ) * d >> 128
-        (hi.wrapping_mul(self.d as u128)
-            .wrapping_add((lo * self.d as u128) >> 64)
-            >> 64) as u64
+        // [hi:lo] * d >> 128
+        hi.carrying_mul(self.d, libdivide_mullhi_u64(self.d, lo)).1
     }
 
     /// Checks whether `x` is divisible by `self`.
