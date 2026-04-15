@@ -61,8 +61,6 @@ fn histogram(vals: &[u64], min: u64, interval: u64, output: &mut [usize]) {
 */
 #![no_std]
 
-use core::num::NonZeroU64;
-
 #[cfg(feature = "std")]
 extern crate std;
 
@@ -291,9 +289,12 @@ pub struct ModulusU64 {
 }
 
 impl ModulusU64 {
+    /// # Panics
+    ///
+    /// Panics if modulus `d` is `0`.
     #[inline(always)]
-    pub const fn new(d: NonZeroU64) -> Self {
-        let d = d.get();
+    pub const fn new(d: u64) -> Self {
+        assert!(d != 0);
         let c = (u128::MAX / d as u128).wrapping_add(1);
 
         Self { d, c }
@@ -328,22 +329,18 @@ impl core::ops::Rem<ModulusU64> for u64 {
 
 #[cfg(test)]
 mod test_modulus {
-    use core::num::NonZero;
-
     use super::ModulusU64;
     use proptest::prelude::*;
 
     #[test]
     fn power_of_two() {
         for d in std::iter::successors(Some(1_u64), |d| d.checked_mul(2)) {
-            let modulus = ModulusU64::new(NonZero::new(d).unwrap());
+            let modulus = ModulusU64::new(d);
 
             for x in std::iter::successors(Some(1_u64), |d| d.checked_mul(2)) {
                 assert_eq!(modulus.modulo(x), x % d)
             }
-            for x in std::iter::successors(Some(1_u64), |d| d.checked_mul(3)) {
-                assert_eq!(modulus.modulo(x), x % d)
-            }
+
             assert_eq!(modulus.modulo(!0), !0 % d)
         }
     }
@@ -351,13 +348,9 @@ mod test_modulus {
     #[test]
     fn small() {
         for d in 1..1 << 10 {
-            let modulus = ModulusU64::new(NonZero::new(d).unwrap());
+            let modulus = ModulusU64::new(d);
 
-            // naive PRNG
-            for x in
-                std::iter::successors(Some(0_u64), |&x| Some(x.wrapping_mul(x).wrapping_add(1)))
-                    .take(2 << 10)
-            {
+            for x in 0..2 << 10 {
                 assert_eq!(modulus.modulo(x), x % d)
             }
         }
@@ -366,7 +359,7 @@ mod test_modulus {
     #[test]
     fn large() {
         for d in (1..=u64::MAX).rev().take(1 << 10) {
-            let modulus = ModulusU64::new(NonZero::new(d).unwrap());
+            let modulus = ModulusU64::new(d);
 
             for x in
                 std::iter::successors(Some(0_u64), |&x| Some(x.wrapping_mul(x).wrapping_add(2)))
@@ -381,7 +374,7 @@ mod test_modulus {
         #![proptest_config(ProptestConfig::with_cases(50 << 10))]
         #[test]
         fn random_modulo(d in 1..=u64::MAX, x: u64) {
-            let modulus = ModulusU64::new(NonZero::new(d).unwrap());
+            let modulus = ModulusU64::new(d);
 
             assert_eq!(modulus.modulo(x), x%d)
         }
@@ -391,7 +384,7 @@ mod test_modulus {
         #![proptest_config(ProptestConfig::with_cases(50 << 10))]
         #[test]
         fn random_divisible(d in 1..=u64::MAX, x: u64) {
-            let modulus = ModulusU64::new(NonZero::new(d).unwrap());
+            let modulus = ModulusU64::new(d);
 
             assert_eq!(modulus.can_divide(x), x%d==0)
         }
