@@ -314,8 +314,8 @@ impl ModulusU64 {
     /// Checks whether `x` is divisible by `self`.
     #[inline(always)]
     pub const fn can_divide(&self, x: u64) -> bool {
-        // x % d = 0 <=> c * x % (1 << 128) < c
-        self.c.wrapping_mul(x as u128) < self.c
+        // x % d = 0 <=> x * c (mod 2^128) < c
+        self.c.wrapping_mul(x as u128) <= self.c.wrapping_sub(1)
     }
 }
 
@@ -380,8 +380,33 @@ mod test_modulus {
         }
     }
 
+    #[test]
+    fn divisible_small() {
+        for d in 1..1 << 10 {
+            let modulus = ModulusU64::new(d);
+
+            for x in 0..2 << 10 {
+                assert_eq!(modulus.can_divide(x), x % d == 0, "{x} % {d}")
+            }
+        }
+    }
+
+    #[test]
+    fn divisible_large() {
+        for d in (1..=u64::MAX).rev().take(1 << 10) {
+            let modulus = ModulusU64::new(d);
+
+            for x in
+                std::iter::successors(Some(0_u64), |&x| Some(x.wrapping_mul(x).wrapping_add(2)))
+                    .take(5 << 10)
+            {
+                assert_eq!(modulus.can_divide(x), x % d == 0)
+            }
+        }
+    }
+
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(50 << 10))]
+        #![proptest_config(ProptestConfig::with_cases(1 << 15))]
         #[test]
         fn random_divisible(d in 1..=u64::MAX, x: u64) {
             let modulus = ModulusU64::new(d);
